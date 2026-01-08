@@ -133,3 +133,65 @@ def electron_electron_potential(r: jnp.ndarray) -> jnp.ndarray:
     v_ee = jnp.sum(upper_mask / distances)
 
     return v_ee
+
+
+def local_energy(
+    wavefunction,
+    params: Params,
+    r: jnp.ndarray,
+    molecule: Molecule,
+) -> jnp.ndarray:
+    """Compute local energy E_L(r) = Hψ(r)/ψ(r).
+
+    The local energy is the central quantity in VMC. Its expectation
+    value equals the variational energy:
+        ⟨E⟩ = ∫|ψ|² E_L dr = ⟨E_L⟩_{|ψ|²}
+
+    Args:
+        wavefunction: Wavefunction ansatz with __call__(params, r)
+        params: Wavefunction parameters
+        r: Electron positions, shape (n_electrons, 3)
+        molecule: Molecular system
+
+    Returns:
+        Local energy E_L(r) (scalar)
+    """
+    # Create closure for log|ψ| as function of r only
+    def log_psi_fn(positions):
+        return wavefunction(params, positions)
+
+    # Kinetic energy: -½∇²ψ/ψ
+    T = kinetic_energy(log_psi_fn, r)
+
+    # Electron-nuclear attraction
+    V_en = electron_nuclear_potential(r, molecule)
+
+    # Electron-electron repulsion
+    V_ee = electron_electron_potential(r)
+
+    # Nuclear-nuclear repulsion (constant for fixed geometry)
+    V_nn = molecule.nuclear_repulsion_energy()
+
+    return T + V_en + V_ee + V_nn
+
+
+def local_energy_batched(
+    wavefunction,
+    params: Params,
+    r_batch: jnp.ndarray,
+    molecule: Molecule,
+) -> jnp.ndarray:
+    """Compute local energy for a batch of configurations.
+
+    Args:
+        wavefunction: Wavefunction ansatz
+        params: Wavefunction parameters
+        r_batch: Batch of electron configurations, shape (batch, n_electrons, 3)
+        molecule: Molecular system
+
+    Returns:
+        Array of local energies, shape (batch,)
+    """
+    return vmap(
+        lambda r: local_energy(wavefunction, params, r, molecule)
+    )(r_batch)
