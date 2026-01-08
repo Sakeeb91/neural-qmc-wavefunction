@@ -77,3 +77,59 @@ def estimate_energy(
     energy_std = jnp.std(local_energies) / jnp.sqrt(len(local_energies))
 
     return mean_energy, energy_std
+
+
+def compute_gradient(
+    wavefunction,
+    params: Params,
+    samples: jnp.ndarray,
+    molecule: Molecule,
+) -> Tuple[Params, jnp.ndarray, jnp.ndarray]:
+    """Compute VMC energy gradient using log-derivative trick.
+
+    The gradient is:
+        ∇_θ E = 2⟨(E_L - ⟨E_L⟩) ∇_θ log|ψ|⟩
+
+    This is an unbiased estimator of the true gradient.
+
+    Args:
+        wavefunction: Wavefunction ansatz
+        params: Current parameters
+        samples: Electron configurations, shape (n_samples, n_chains, n_el, 3)
+        molecule: Molecular system
+
+    Returns:
+        Tuple of (gradient, mean_energy, energy_std)
+    """
+    # Flatten samples
+    samples_flat = samples.reshape(-1, *samples.shape[2:])
+    n_total = samples_flat.shape[0]
+
+    # Compute local energies
+    local_energies = vmap(
+        lambda r: local_energy(wavefunction, params, r, molecule)
+    )(samples_flat)
+
+    mean_energy = jnp.mean(local_energies)
+    energy_std = jnp.std(local_energies) / jnp.sqrt(n_total)
+
+    # Centered energies for variance reduction
+    centered_energies = local_energies - mean_energy
+
+    # Compute gradient of log|ψ| w.r.t. params for each sample
+    def grad_log_psi(r):
+        return jax.grad(lambda p: wavefunction(p, r))(params)
+
+    grad_log_psis = vmap(grad_log_psi)(samples_flat)
+
+    # Gradient: 2 * mean((E_L - <E_L>) * ∇log|ψ|)
+    def weighted_sum(grad_tree):
+        return jax.tree.map(
+            lambda g: 2.0 * jnp.mean(centered_energies[:, None] * g.reshape(n_total, -1), axis=0).reshape(g.shape[1:])
+            if g.ndim > 1 else 2.0 * jnp.mean(centered_energies * g, axis=0),
+            grad_tree
+        )
+
+    gradient = weighted_sum(grad_log_psis)
+
+    return gradient, mean_energy, energy_std
