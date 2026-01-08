@@ -135,3 +135,87 @@ class MetropolisSampler:
             n_accepted=new_n_accepted,
             n_steps=state.n_steps + 1,
         )
+
+    def sample(
+        self,
+        key: random.PRNGKey,
+        log_prob_fn: Callable[[jnp.ndarray], jnp.ndarray],
+        state: SamplerState,
+        n_samples: int,
+        n_burn: int = 100,
+        n_thin: int = 1,
+    ) -> Tuple[jnp.ndarray, SamplerState, float]:
+        """Generate samples from |ψ|² with burn-in and thinning.
+
+        Args:
+            key: JAX random key
+            log_prob_fn: Function r -> log|ψ(r)|²
+            state: Initial sampler state
+            n_samples: Number of samples to collect per chain
+            n_burn: Number of burn-in steps (discarded)
+            n_thin: Thinning interval (keep every n_thin-th sample)
+
+        Returns:
+            Tuple of:
+            - samples: shape (n_samples, n_chains, n_electrons, 3)
+            - final_state: SamplerState after sampling
+            - acceptance_rate: average acceptance rate during sampling
+        """
+        n_chains = state.positions.shape[0]
+
+        # Reset acceptance counter for this sampling run
+        state = SamplerState(
+            positions=state.positions,
+            log_prob=state.log_prob,
+            n_accepted=jnp.zeros(n_chains),
+            n_steps=0,
+        )
+
+        # Burn-in phase
+        key, subkey = random.split(key)
+        keys_burn = random.split(subkey, n_burn)
+
+        def burn_step(state, key):
+            return self.step(key, state, log_prob_fn), None
+
+        state, _ = jax.lax.scan(burn_step, state, keys_burn)
+
+        # Reset acceptance counter after burn-in
+        state = SamplerState(
+            positions=state.positions,
+            log_prob=state.log_prob,
+            n_accepted=jnp.zeros(n_chains),
+            n_steps=0,
+        )
+
+        # Sampling phase with thinning
+        n_total_steps = n_samples * n_thin
+        key, subkey = random.split(key)
+        keys_sample = random.split(subkey, n_total_steps)
+
+        def sample_step(state, key):
+            new_state = self.step(key, state, log_prob_fn)
+            return new_state, new_state.positions
+
+        final_state, all_positions = jax.lax.scan(sample_step, state, keys_sample)
+
+        # Apply thinning: keep every n_thin-th sample
+        samples = all_positions[::n_thin]  # (n_samples, n_chains, n_el, 3)
+
+        # Compute acceptance rate
+        acceptance_rate = jnp.mean(final_state.n_accepted) / final_state.n_steps
+
+        return samples, final_state, acceptance_rate
+
+    def get_acceptance_rate(self, state: SamplerState) -> float:
+        """Compute current acceptance rate.
+
+        Args:
+            state: Current sampler state
+
+        Returns:
+            Acceptance rate (0 to 1)
+        """
+        if state.n_steps == 0:
+            return 0.0
+        return float(jnp.mean(state.n_accepted) / state.n_steps)
