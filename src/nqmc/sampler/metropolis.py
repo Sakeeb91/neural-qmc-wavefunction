@@ -85,3 +85,53 @@ class MetropolisSampler:
             n_accepted=jnp.zeros(n_chains),
             n_steps=0,
         )
+
+    def step(
+        self,
+        key: random.PRNGKey,
+        state: SamplerState,
+        log_prob_fn: Callable[[jnp.ndarray], jnp.ndarray],
+    ) -> SamplerState:
+        """Perform one Metropolis-Hastings step.
+
+        Args:
+            key: JAX random key
+            state: Current sampler state
+            log_prob_fn: Function r -> log|ψ(r)|²
+
+        Returns:
+            Updated SamplerState after one MH step
+        """
+        key_proposal, key_accept = random.split(key)
+
+        # Generate proposals: r' = r + δ, where δ ~ N(0, step_size²)
+        n_chains = state.positions.shape[0]
+        proposals = state.positions + self.step_size * random.normal(
+            key_proposal, state.positions.shape
+        )
+
+        # Compute log probability of proposals
+        log_prob_proposed = jax.vmap(log_prob_fn)(proposals)
+
+        # Compute acceptance probability: min(1, |ψ(r')|²/|ψ(r)|²)
+        # In log space: log_accept = log_prob_proposed - log_prob_current
+        log_accept_ratio = log_prob_proposed - state.log_prob
+
+        # Accept with probability min(1, exp(log_accept_ratio))
+        # Use log-uniform for numerical stability
+        log_uniform = jnp.log(random.uniform(key_accept, (n_chains,)))
+        accept = log_uniform < log_accept_ratio  # shape (n_chains,)
+
+        # Update positions and log_prob where accepted
+        new_positions = jnp.where(
+            accept[:, None, None], proposals, state.positions
+        )
+        new_log_prob = jnp.where(accept, log_prob_proposed, state.log_prob)
+        new_n_accepted = state.n_accepted + accept.astype(jnp.float32)
+
+        return SamplerState(
+            positions=new_positions,
+            log_prob=new_log_prob,
+            n_accepted=new_n_accepted,
+            n_steps=state.n_steps + 1,
+        )
