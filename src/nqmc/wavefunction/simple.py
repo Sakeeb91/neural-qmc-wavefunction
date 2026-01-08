@@ -71,11 +71,16 @@ class SimpleMLP(nn.Module):
 
 
 class SimpleWavefunction(Wavefunction):
-    """Simple feedforward wavefunction ansatz.
+    """Simple feedforward wavefunction with exponential envelope.
 
-    This is a basic neural network wavefunction that maps electron
-    positions directly to log|ψ|. It does NOT enforce antisymmetry,
-    so it's only suitable for:
+    This wavefunction combines a neural network with a physics-inspired
+    exponential envelope that decays away from nuclei:
+        ψ(r) = exp(MLP(r)) * exp(-α * Σ_i min_A |r_i - R_A|)
+
+    The envelope ensures the wavefunction has the correct asymptotic
+    behavior even at initialization.
+
+    This does NOT enforce antisymmetry, so it's only suitable for:
     - Testing the VMC infrastructure
     - 2-electron systems where antisymmetry is less critical
 
@@ -84,22 +89,60 @@ class SimpleWavefunction(Wavefunction):
     Attributes:
         hidden_dims: Hidden layer sizes (default: (64, 64))
         activation: Activation function (default: 'tanh')
+        envelope_decay: Decay rate for exponential envelope (default: 1.0)
+        nuclear_positions: Array of nuclear positions for envelope
     """
 
     def __init__(
         self,
         hidden_dims: Tuple[int, ...] = (64, 64),
         activation: str = "tanh",
+        envelope_decay: float = 1.0,
+        nuclear_positions: jnp.ndarray = None,
     ):
         """Initialize SimpleWavefunction.
 
         Args:
             hidden_dims: Tuple of hidden layer dimensions
             activation: Activation function ('tanh' or 'silu')
+            envelope_decay: Exponential decay rate (in 1/Bohr)
+            nuclear_positions: (n_atoms, 3) array of nuclear positions.
+                              If None, assumes H2 at equilibrium.
         """
         self.hidden_dims = hidden_dims
         self.activation = activation
+        self.envelope_decay = envelope_decay
+
+        if nuclear_positions is None:
+            # Default: H2 at equilibrium
+            self.nuclear_positions = jnp.array([[0.0, 0.0, 0.0], [1.4, 0.0, 0.0]])
+        else:
+            self.nuclear_positions = jnp.array(nuclear_positions)
+
         self._network = SimpleMLP(hidden_dims=hidden_dims, activation=activation)
+
+    def _envelope(self, r: jnp.ndarray) -> jnp.ndarray:
+        """Compute log of exponential envelope.
+
+        For each electron, finds the distance to nearest nucleus
+        and returns -α * Σ_i r_i_min.
+
+        Args:
+            r: Electron positions, shape (n_electrons, 3)
+
+        Returns:
+            Scalar log(envelope)
+        """
+        # r: (n_el, 3), nuclear_positions: (n_atoms, 3)
+        # diff: (n_el, n_atoms, 3)
+        diff = r[:, None, :] - self.nuclear_positions[None, :, :]
+        distances = jnp.linalg.norm(diff, axis=-1)  # (n_el, n_atoms)
+
+        # For each electron, take distance to nearest nucleus
+        min_distances = jnp.min(distances, axis=1)  # (n_el,)
+
+        # Return log(exp(-α * Σ r_min)) = -α * Σ r_min
+        return -self.envelope_decay * jnp.sum(min_distances)
 
     def __call__(self, params: Params, r: jnp.ndarray) -> jnp.ndarray:
         """Compute log|ψ(r)| for electron configuration.
@@ -111,7 +154,10 @@ class SimpleWavefunction(Wavefunction):
         Returns:
             Scalar log|ψ(r)|
         """
-        return self._network.apply(params, r)
+        # MLP output + exponential envelope
+        mlp_output = self._network.apply(params, r)
+        envelope = self._envelope(r)
+        return mlp_output + envelope
 
     def init(self, key: random.PRNGKey, r_sample: jnp.ndarray) -> Params:
         """Initialize network parameters.
