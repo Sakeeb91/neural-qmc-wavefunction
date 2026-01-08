@@ -40,24 +40,24 @@ def parse_args():
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Train VMC on H₂ molecule")
     parser.add_argument(
-        "--n_steps", type=int, default=500,
-        help="Number of optimization steps (default: 500)"
+        "--n_steps", type=int, default=200,
+        help="Number of optimization steps (default: 200)"
     )
     parser.add_argument(
-        "--lr", type=float, default=1e-3,
-        help="Learning rate (default: 0.001)"
+        "--lr", type=float, default=1e-2,
+        help="Learning rate (default: 0.01)"
     )
     parser.add_argument(
         "--hidden_dims", type=str, default="64,64",
         help="Hidden layer dimensions (default: '64,64')"
     )
     parser.add_argument(
-        "--n_samples", type=int, default=100,
-        help="MCMC samples per step (default: 100)"
+        "--n_samples", type=int, default=300,
+        help="MCMC samples per step (default: 300)"
     )
     parser.add_argument(
-        "--n_chains", type=int, default=16,
-        help="Number of MCMC chains (default: 16)"
+        "--n_chains", type=int, default=32,
+        help="Number of MCMC chains (default: 32)"
     )
     parser.add_argument(
         "--seed", type=int, default=42,
@@ -162,7 +162,11 @@ def main():
     key = random.PRNGKey(args.seed)
     key, init_key = random.split(key)
 
-    wavefunction = SimpleWavefunction(hidden_dims=hidden_dims)
+    wavefunction = SimpleWavefunction(
+        hidden_dims=hidden_dims,
+        envelope_decay=1.0,
+        nuclear_positions=molecule.positions,
+    )
 
     # Initialize parameters
     r_sample = jnp.zeros((molecule.n_electrons, 3))
@@ -177,8 +181,8 @@ def main():
         learning_rate=args.lr,
         n_samples=args.n_samples,
         n_chains=args.n_chains,
-        n_burn=100,
-        step_size=0.1,
+        n_burn=300,
+        step_size=0.2,
         clip_grad=1.0,
     )
 
