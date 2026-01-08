@@ -67,3 +67,36 @@ def kinetic_energy(
     kinetic = -0.5 * (laplacian_log_psi + jnp.sum(grad_log_psi**2))
 
     return kinetic
+
+
+def electron_nuclear_potential(
+    r: jnp.ndarray,
+    molecule: Molecule,
+) -> jnp.ndarray:
+    """Compute electron-nuclear attraction energy.
+
+    V_en = -∑_{i,A} Z_A / |r_i - R_A|
+
+    Args:
+        r: Electron positions, shape (n_electrons, 3)
+        molecule: Molecular system with nuclear positions and charges
+
+    Returns:
+        Electron-nuclear potential energy (scalar, negative)
+    """
+    # Get nuclear positions as JAX array
+    nuclear_positions = jnp.array(molecule.positions)
+    charges = jnp.array(molecule.charges)
+
+    # Compute all electron-nuclear distances
+    # r[:, None, :] - nuclear_positions[None, :, :] -> (n_el, n_atoms, 3)
+    diff = r[:, None, :] - nuclear_positions[None, :, :]
+    distances = jnp.linalg.norm(diff, axis=-1)  # (n_el, n_atoms)
+
+    # Regularize to avoid division by zero at coalescence
+    distances = jnp.maximum(distances, EPSILON)
+
+    # V_en = -∑_{i,A} Z_A / r_{iA}
+    v_en = -jnp.sum(charges[None, :] / distances)
+
+    return v_en
