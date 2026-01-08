@@ -124,8 +124,10 @@ class SimpleWavefunction(Wavefunction):
     def _envelope(self, r: jnp.ndarray) -> jnp.ndarray:
         """Compute log of exponential envelope.
 
-        For each electron, finds the distance to nearest nucleus
-        and returns -α * Σ_i r_i_min.
+        Uses sum of exponentials from all nuclei:
+        envelope = Π_i Σ_A exp(-α |r_i - R_A|)
+
+        This is similar to a molecular orbital formed from atomic orbitals.
 
         Args:
             r: Electron positions, shape (n_electrons, 3)
@@ -138,11 +140,13 @@ class SimpleWavefunction(Wavefunction):
         diff = r[:, None, :] - self.nuclear_positions[None, :, :]
         distances = jnp.linalg.norm(diff, axis=-1)  # (n_el, n_atoms)
 
-        # For each electron, take distance to nearest nucleus
-        min_distances = jnp.min(distances, axis=1)  # (n_el,)
+        # For each electron, sum of exponentials from all nuclei
+        # This gives a bonding-like orbital shape
+        exp_terms = jnp.exp(-self.envelope_decay * distances)  # (n_el, n_atoms)
+        sum_exp = jnp.sum(exp_terms, axis=1)  # (n_el,)
 
-        # Return log(exp(-α * Σ r_min)) = -α * Σ r_min
-        return -self.envelope_decay * jnp.sum(min_distances)
+        # Return log(Π_i sum_exp_i) = Σ_i log(sum_exp_i)
+        return jnp.sum(jnp.log(sum_exp))
 
     def __call__(self, params: Params, r: jnp.ndarray) -> jnp.ndarray:
         """Compute log|ψ(r)| for electron configuration.
