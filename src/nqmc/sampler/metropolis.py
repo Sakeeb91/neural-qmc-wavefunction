@@ -59,22 +59,32 @@ class MetropolisSampler:
         log_prob_fn: Callable[[jnp.ndarray], jnp.ndarray],
         n_chains: int,
         n_electrons: int,
-        init_width: float = 1.0,
+        init_width: float = 0.5,
+        init_positions: jnp.ndarray = None,
     ) -> SamplerState:
-        """Initialize sampler state with random positions.
+        """Initialize sampler state with positions near molecule.
 
         Args:
             key: JAX random key
             log_prob_fn: Function r -> log|ψ(r)|²
             n_chains: Number of independent Markov chains
             n_electrons: Number of electrons
-            init_width: Width of initial position distribution (in Bohr)
+            init_width: Width of Gaussian noise around init positions (in Bohr)
+            init_positions: Optional (n_electrons, 3) array of mean positions.
+                           If None, uses origin.
 
         Returns:
             Initial SamplerState
         """
-        # Initialize positions randomly around origin
-        positions = init_width * random.normal(key, (n_chains, n_electrons, 3))
+        if init_positions is None:
+            # Default: electrons around origin
+            init_positions = jnp.zeros((n_electrons, 3))
+
+        # Replicate for all chains and add Gaussian noise
+        # init_positions: (n_el, 3) -> (n_chains, n_el, 3)
+        positions = init_positions[None, :, :] + init_width * random.normal(
+            key, (n_chains, n_electrons, 3)
+        )
 
         # Compute initial log probabilities
         log_prob = jax.vmap(log_prob_fn)(positions)

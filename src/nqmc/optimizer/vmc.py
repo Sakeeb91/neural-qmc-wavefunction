@@ -189,8 +189,22 @@ class VMCOptimizer:
         def log_prob_fn(r):
             return wavefunction.log_prob(params, r)
 
+        # Initialize electrons near nuclei
+        # Place spin-up electrons near first half of nuclei, spin-down near second half
+        nuclear_positions = jnp.array(molecule.positions)
+        n_up, n_down = molecule.spin
+        n_nuclei = molecule.n_atoms
+
+        # Assign electrons to nuclei (round-robin)
+        init_positions = []
+        for i in range(n_up + n_down):
+            nucleus_idx = i % n_nuclei
+            init_positions.append(nuclear_positions[nucleus_idx])
+        init_positions = jnp.stack(init_positions, axis=0)
+
         sampler_state = sampler.init_state(
-            key, log_prob_fn, self.n_chains, molecule.n_electrons
+            key, log_prob_fn, self.n_chains, molecule.n_electrons,
+            init_width=0.5, init_positions=init_positions,
         )
 
         return VMCState(
