@@ -100,3 +100,36 @@ def electron_nuclear_potential(
     v_en = -jnp.sum(charges[None, :] / distances)
 
     return v_en
+
+
+def electron_electron_potential(r: jnp.ndarray) -> jnp.ndarray:
+    """Compute electron-electron repulsion energy.
+
+    V_ee = ∑_{i<j} 1 / |r_i - r_j|
+
+    Args:
+        r: Electron positions, shape (n_electrons, 3)
+
+    Returns:
+        Electron-electron potential energy (scalar, positive)
+    """
+    n_electrons = r.shape[0]
+
+    if n_electrons < 2:
+        return jnp.array(0.0)
+
+    # Compute all pairwise distances
+    # r[:, None, :] - r[None, :, :] -> (n_el, n_el, 3)
+    diff = r[:, None, :] - r[None, :, :]
+    distances = jnp.linalg.norm(diff, axis=-1)  # (n_el, n_el)
+
+    # Regularize diagonal (self-interaction) to avoid 0/0
+    # We'll mask these out anyway, but this prevents NaN in gradients
+    distances = distances + jnp.eye(n_electrons) * 1e10
+
+    # Sum upper triangle only (i < j pairs)
+    # Use triu with k=1 to exclude diagonal
+    upper_mask = jnp.triu(jnp.ones((n_electrons, n_electrons)), k=1)
+    v_ee = jnp.sum(upper_mask / distances)
+
+    return v_ee
