@@ -1,0 +1,79 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neural-qmc-wavefunction"
+version = "0.1.0"
+description = "Neural network wavefunctions for Variational Monte Carlo"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+authors = [
+    {name = "Sakeeb Rahman", email = "rahman.sakeeb@gmail.com"}
+]
+keywords = [
+    "quantum-monte-carlo",
+    "neural-networks",
+    "variational-monte-carlo",
+    "computational-chemistry",
+    "jax",
+    "physics-informed-ml"
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Chemistry",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+
+dependencies = [
+    "jax>=0.4.20",
+    "jaxlib>=0.4.20",
+    "flax>=0.8.0",
+    "optax>=0.1.7",
+    "numpy>=1.24.0",
+    "scipy>=1.11.0",
+    "matplotlib>=3.7.0",
+    "pyscf>=2.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "ruff>=0.1.0",
+    "mypy>=1.0.0",
+]
+notebooks = [
+    "jupyter>=1.0.0",
+    "ipywidgets>=8.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Sakeeb91/neural-qmc-wavefunction"
+Repository = "https://github.com/Sakeeb91/neural-qmc-wavefunction"
+Issues = "https://github.com/Sakeeb91/neural-qmc-wavefunction/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+addopts = "-v --tb=short"
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+select = ["E", "F", "W", "I", "UP", "B", "C4"]
