@@ -151,11 +151,11 @@ class VMCOptimizer:
         clip_grad: Maximum gradient norm (for stability)
     """
 
-    learning_rate: float = 1e-3
-    n_samples: int = 100
-    n_chains: int = 16
-    n_burn: int = 100
-    step_size: float = 0.1
+    learning_rate: float = 1e-2
+    n_samples: int = 200
+    n_chains: int = 32
+    n_burn: int = 200
+    step_size: float = 0.5
     clip_grad: float = 1.0
 
     def init(
